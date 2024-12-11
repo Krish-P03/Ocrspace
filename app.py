@@ -11,8 +11,16 @@ from langchain_groq import ChatGroq
 from langchain_community.vectorstores import FAISS
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-def setup_environment():
-    os.environ["GROQ_API_KEY"] = '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'
+os.environ["GROQ_API_KEY"] = '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'
+# config = {'max_new_tokens': 512, 'context_length': 8000}
+llm = ChatGroq(
+    model='llama3-70b-8192',
+    temperature=0.5,
+    max_tokens=None,
+    timeout=None,
+    max_retries=2
+)
+
 
 # Define OCR functions for image and PDF files
 def ocr_image(image_path, language='eng+guj'):
@@ -128,32 +136,71 @@ def user_input(user_question):
     return response.get("result", "No result found")
 
 def gradio_interface():
-    def process_files(files):
-        file_paths = []
+
+    def process_text_files(files):
+        file_contents = []
+        temp_dir = "temp_text_files"
+        os.makedirs(temp_dir, exist_ok=True)
+
         for file in files:
-            file_path = os.path.join("temp", file.name)
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, "wb") as f:
-                f.write(file.read())
-            file_paths.append(file_path)
-        process_ocr_and_pdf_files(file_paths)
-        return "Files processed and vector store updated!"
+            try:
+                # Save the file locally for processing
+                file_path = os.path.join(temp_dir, file.orig_name)
+            
+                # Handle different file attributes
+                if hasattr(file, "name"):  # File has a name attribute, read from the path
+                    with open(file.name, "r", encoding="utf-8") as f:
+                        content = f.read()
+                elif hasattr(file, "value"):  # File content is directly in value
+                    content = file.value.decode("utf-8")
+                else:
+                    raise TypeError("Unsupported file object type.")
+            
+                # Save the content to a local file
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+            
+                file_contents.append((file.orig_name, content))  # Store filename and content for further processing
+            except Exception as e:
+                print(f"Error processing file {file.orig_name}: {e}")
+
+            # Process the collected text data
+        process_text_data(file_contents)
+        return "Files processed successfully!"
+    
+    def process_text_data(file_contents):
+        """
+        Example function to process text data. You can replace this with your logic.
+        """
+        for filename, content in file_contents:
+            print(f"Processing file: {filename}")
+            print("Content:")
+            print(content)
 
     def ask_question(user_question):
         return user_input(user_question)
 
-    file_upload = gr.inputs.File(label="Upload Files", type="file", multiple=True)
-    text_input = gr.inputs.Textbox(label="Ask a question related to the uploaded documents:")
-
-    outputs = [gr.outputs.Textbox(label="Output"), gr.outputs.Textbox(label="Conversation History")]
-    interface = gr.Interface(
-        fn=[process_files, ask_question],
-        inputs=[file_upload, text_input],
-        outputs=outputs,
-        live=True
+    # Separate interfaces for file upload and question-answering
+    file_upload_interface = gr.Interface(
+        fn=process_uploaded_files,
+        inputs=gr.Files(label="Upload Files", file_types=[".pdf", ".jpg", ".jpeg", ".png", ".bmp"]),
+        outputs=gr.Textbox(label="File Processing Status")
     )
+
+    question_answering_interface = gr.Interface(
+        fn=ask_question,
+        inputs=gr.Textbox(label="Ask a question related to the uploaded documents:"),
+        outputs=gr.Textbox(label="Answer")
+    )
+
+    # Combine interfaces into a tabbed layout
+    interface = gr.TabbedInterface(
+        interface_list=[file_upload_interface, question_answering_interface],
+        tab_names=["Upload Files", "Ask Questions"]
+    )
+
     interface.launch()
 
+
 if __name__ == "__main__":
-    setup_environment()
     gradio_interface()

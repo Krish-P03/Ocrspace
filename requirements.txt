@@ -1,7 +1,4 @@
---extra-index-url https://pypi.org/simple/
-pip==24.3.1
 streamlit
-os-sys
 pillow
 pytesseract
 pdf2image
